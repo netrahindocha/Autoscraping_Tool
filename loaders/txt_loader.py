@@ -1,14 +1,11 @@
-"""Plain text document loader"""
-
 from pathlib import Path
 from .base import DocumentLoader
 
-
 class TextLoader(DocumentLoader):
-    """Loader for plain text files."""
+    # Loader for plain text files.
 
     def to_pdf(self, output_path: str) -> str:
-        """Convert text to PDF using reportlab."""
+        # Convert text to PDF using reportlab.
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 

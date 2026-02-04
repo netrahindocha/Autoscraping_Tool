@@ -1,5 +1,3 @@
-"""TOC and heading detection for PDFs"""
-
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
@@ -8,7 +6,7 @@ import pdfplumber
 
 @dataclass
 class HeadingEntry:
-    """Represents a detected heading in the document."""
+    # Represents a detected heading in the document
     title: str
     level: int  # 1 for H1/main, 2 for H2/sub, etc.
     page_num: int  # 0-indexed page number
@@ -17,14 +15,14 @@ class HeadingEntry:
 
 @dataclass
 class TOCEntry:
-    """Represents a Table of Contents entry."""
+    # Represents a Table of Contents entry
     title: str
     level: int
     page_num: Optional[int]  # Target page if available
 
 
 class HeadingDetector:
-    """Detects TOC and headings in PDF documents."""
+    # Detects TOC and headings in PDF documents
 
     def __init__(self, pdf_path: str):
         self.pdf_path = pdf_path
@@ -42,11 +40,7 @@ class HeadingDetector:
             self._pdf.close()
 
     def detect_toc(self) -> Tuple[List[TOCEntry], Set[int]]:
-        """Detect Table of Contents entries.
-
-        Returns:
-            Tuple of (TOC entries list, set of TOC page numbers)
-        """
+        # Detect Table of Contents entries.
         entries = []
         toc_pages = set()
         min_indent = 999
@@ -92,7 +86,7 @@ class HeadingDetector:
         return toc_entries, toc_pages
 
     def detect_headers_footers(self) -> Set[Tuple[int, str]]:
-        """Auto-detect repeating headers/footers by y-position."""
+        # Auto-detect repeating headers/footers by y-position.
         sample_pages = self._pdf.pages[1:min(10, len(self._pdf.pages))]
         if len(sample_pages) < 2:
             return set()
@@ -133,10 +127,7 @@ class HeadingDetector:
         return header_footer_entries
 
     def detect_h1_headings(self) -> List[HeadingEntry]:
-        """Detect H1 headings based on font size and styling.
-
-        Used when no TOC is available.
-        """
+        # Detect H1 headings based on font size and styling.
         headings = []
 
         for page_num, page in enumerate(self._pdf.pages):
@@ -183,11 +174,8 @@ class HeadingDetector:
         return headings
 
     def get_section_boundaries(self) -> List[Tuple[str, int, int]]:
-        """Get section boundaries for splitting.
+        # Get section boundaries for splitting.
 
-        Returns:
-            List of (section_title, start_page, end_page) tuples
-        """
         # First try TOC
         toc_entries, toc_pages = self.detect_toc()
         self.detect_headers_footers()
@@ -210,7 +198,7 @@ class HeadingDetector:
         return [("Document", 0, len(self._pdf.pages) - 1)]
 
     def _boundaries_from_toc(self, entries: List[TOCEntry]) -> List[Tuple[str, int, int]]:
-        """Convert TOC entries to section boundaries."""
+        # Convert TOC entries to section boundaries.
         boundaries = []
         total_pages = len(self._pdf.pages)
 
@@ -235,7 +223,7 @@ class HeadingDetector:
         return boundaries
 
     def _boundaries_from_headings(self, headings: List[HeadingEntry]) -> List[Tuple[str, int, int]]:
-        """Convert heading entries to section boundaries."""
+        # Convert heading entries to section boundaries.
         boundaries = []
         total_pages = len(self._pdf.pages)
 

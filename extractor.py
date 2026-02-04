@@ -1,5 +1,3 @@
-"""Image and hyperlink extraction from PDFs"""
-
 import io
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +18,7 @@ import pdfplumber
 
 @dataclass
 class ExtractedImage:
-    """Represents an extracted image."""
+    # Represents an extracted image
     image_data: bytes
     format: str
     page_num: int
@@ -33,7 +31,7 @@ class ExtractedImage:
 
 @dataclass
 class ExtractedHyperlink:
-    """Represents an extracted hyperlink."""
+    # Represents an extracted hyperlink
     url: str
     text: str
     page_num: int
@@ -43,15 +41,10 @@ class ExtractedHyperlink:
 
 
 class PDFExtractor:
-    """Extracts images and hyperlinks from PDF documents."""
+    # Extracts images and hyperlinks from PDF documents
 
     def __init__(self, pdf_path: str, section_id: str, assets_dir: str):
-        """
-        Args:
-            pdf_path: Path to the PDF file
-            section_id: Section identifier for naming (e.g., "01", "02")
-            assets_dir: Directory to save extracted assets
-        """
+      
         self.pdf_path = Path(pdf_path)
         self.section_id = section_id
         self.assets_dir = Path(assets_dir)
@@ -59,18 +52,13 @@ class PDFExtractor:
         self.images_dir.mkdir(parents=True, exist_ok=True)
 
     def extract_images(self) -> List[ExtractedImage]:
-        """Extract all images from the PDF.
-
-        Returns:
-            List of ExtractedImage objects with saved paths
-        """
+        # Extract all images from the PDF.
         if fitz:
             return self._extract_images_pymupdf()
         else:
             return self._extract_images_pdfplumber()
 
     def _extract_images_pymupdf(self) -> List[ExtractedImage]:
-        """Extract images using PyMuPDF (preferred - better quality)."""
         images = []
         doc = fitz.open(str(self.pdf_path))
 
@@ -118,7 +106,7 @@ class PDFExtractor:
         return images
 
     def _extract_images_pdfplumber(self) -> List[ExtractedImage]:
-        """Extract images using pdfplumber (fallback)."""
+        # Extract images using pdfplumber (fallback).
         images = []
 
         with pdfplumber.open(self.pdf_path) as pdf:
@@ -171,14 +159,14 @@ class PDFExtractor:
         return images
 
     def extract_hyperlinks(self) -> List[ExtractedHyperlink]:
-        """Extract all hyperlinks from the PDF."""
+        # Extract all hyperlinks from the PDF.
         if fitz:
             return self._extract_links_pymupdf()
         else:
             return self._extract_links_pdfplumber()
 
     def _extract_links_pymupdf(self) -> List[ExtractedHyperlink]:
-        """Extract hyperlinks using PyMuPDF."""
+        # Extract hyperlinks using PyMuPDF.
         links = []
         doc = fitz.open(str(self.pdf_path))
 
@@ -208,7 +196,7 @@ class PDFExtractor:
         return links
 
     def _extract_links_pdfplumber(self) -> List[ExtractedHyperlink]:
-        """Extract hyperlinks using pdfplumber."""
+        # Extract hyperlinks using pdfplumber.
         links = []
 
         with pdfplumber.open(self.pdf_path) as pdf:
@@ -232,15 +220,7 @@ class PDFExtractor:
         return links
 
     def get_image_references(self, images: List[ExtractedImage], markdown_dir: str) -> Dict[int, List[str]]:
-        """Get markdown image references organized by page.
-
-        Args:
-            images: List of extracted images
-            markdown_dir: Directory where markdown file will be saved
-
-        Returns:
-            Dict mapping page_num to list of markdown image references
-        """
+        # Get markdown image references organized by page.
         references = {}
         markdown_path = Path(markdown_dir)
 

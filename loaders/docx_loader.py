@@ -1,5 +1,3 @@
-"""Word document (.docx) loader"""
-
 import subprocess
 import sys
 from pathlib import Path
@@ -7,19 +5,10 @@ from .base import DocumentLoader
 
 
 class DocxLoader(DocumentLoader):
-    """Loader for Word documents (.docx, .doc).
-
-    Converts Word documents to PDF using available converters.
-    """
 
     def to_pdf(self, output_path: str) -> str:
-        """Convert Word document to PDF.
+        # Convert Word document to PDF.
 
-        Tries multiple conversion methods:
-        1. docx2pdf (Windows with MS Word)
-        2. LibreOffice (cross-platform)
-        3. python-docx + reportlab (pure Python fallback)
-        """
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +24,7 @@ class DocxLoader(DocumentLoader):
         return self._convert_with_python(output_path)
 
     def _try_docx2pdf(self, output_path: str) -> bool:
-        """Try converting using docx2pdf (Windows + MS Word)"""
+        # Try converting using docx2pdf (Windows + MS Word)
         try:
             from docx2pdf import convert
             convert(str(self.file_path), output_path)
@@ -46,7 +35,7 @@ class DocxLoader(DocumentLoader):
             return False
 
     def _try_libreoffice(self, output_path: str) -> bool:
-        """Try converting using LibreOffice"""
+        # Try converting using LibreOffice
         output = Path(output_path)
 
         # Common LibreOffice paths
@@ -81,7 +70,7 @@ class DocxLoader(DocumentLoader):
         return False
 
     def _convert_with_python(self, output_path: str) -> str:
-        """Pure Python conversion using python-docx and reportlab"""
+        # Pure Python conversion using python-docx and reportlab
         try:
             from docx import Document
             from reportlab.lib.pagesizes import letter

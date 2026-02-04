@@ -1,15 +1,13 @@
-"""HTML document loader"""
-
 import subprocess
 from pathlib import Path
 from .base import DocumentLoader
 
 
 class HTMLLoader(DocumentLoader):
-    """Loader for HTML documents."""
+    # Loader for HTML documents.
 
     def to_pdf(self, output_path: str) -> str:
-        """Convert HTML to PDF using available converters."""
+        # Convert HTML to PDF using available converters.
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +42,7 @@ class HTMLLoader(DocumentLoader):
             return False
 
     def _convert_with_python(self, output_path: str) -> str:
-        """Pure Python conversion using reportlab"""
+        # Pure Python conversion using reportlab
         try:
             from bs4 import BeautifulSoup
             from reportlab.lib.pagesizes import letter

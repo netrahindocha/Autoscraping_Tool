@@ -1,5 +1,3 @@
-"""PDF to Markdown conversion with asset mapping"""
-
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -10,7 +8,6 @@ from .extractor import ExtractedHyperlink, ExtractedImage
 
 
 class MarkdownConverter:
-    """Converts PDF content to Markdown with proper asset references."""
 
     def __init__(
         self,
@@ -31,10 +28,9 @@ class MarkdownConverter:
         self.header_footer_entries = header_footer_entries
         self.all_sections = all_sections  # For internal link mapping
         self.sub_titles = sub_titles or set()
-        self._content_started = False  # Tracks if we've passed our own section title
+        self._content_started = False  # Tracks if passed over section title
 
     def convert(self) -> str:
-        """Convert PDF to Markdown string."""
         content_items = []
 
         with pdfplumber.open(self.pdf_path) as pdf:
@@ -46,16 +42,10 @@ class MarkdownConverter:
                     key=lambda img: img.y
                 )
 
-                # If we stopped mid-page (next section starts here), drop
-                # images that belong to the next section.
                 if stop_y is not None:
                     page_images = [img for img in page_images if img.y < stop_y]
 
                 if page_images:
-                    # Interleave images into content by Y position on the page.
-                    # Each content item has a 'y' key from _process_page.
-                    # Walk content in order; before each item, flush any images
-                    # whose Y falls above it.
                     merged = []
                     img_idx = 0
                     for item in page_content:
@@ -69,7 +59,6 @@ class MarkdownConverter:
                             })
                             img_idx += 1
                         merged.append(item)
-                    # Remaining images (below all content) go at end
                     while img_idx < len(page_images):
                         img = page_images[img_idx]
                         merged.append({
@@ -85,13 +74,6 @@ class MarkdownConverter:
         return self._format_to_markdown(content_items)
 
     def _process_page(self, page, page_num: int) -> Tuple[List[dict], float | None]:
-        """Process a single page and extract content items.
-
-        Returns:
-            (content_items, stop_y) — stop_y is the Y coordinate where we
-            stopped because the next section's title was reached.  None when
-            the entire page belongs to this section.
-        """
         text = page.extract_text(layout=True)
         if not text:
             return [], None
@@ -185,9 +167,7 @@ class MarkdownConverter:
                 i = j
                 continue
 
-            # Check for orphaned letter sub-item (numbered list that started on
-            # a previous page).  Detect by: matches [a-z]. AND is indented.
-            # Infer base_indent by looking ahead for the next top-level \d+. line.
+            # Check for continued sub-item
             letter_match = re.match(r'^([a-z])\.\s*(.*)$', stripped)
             if letter_match and indent > 0:
                 effective_base = indent - 5  # default estimate
@@ -210,10 +190,7 @@ class MarkdownConverter:
                 i = j
                 continue
 
-            # Skip table content (will be added separately) — must run before heading check.
             # Two checks: text-match for cells extracted by pdfplumber, and spatial
-            # bbox check for layout-text lines that fall inside a detected table area
-            # (handles multi-cell rows that don't substring-match any single cell).
             if cleaned_tables and (self._is_table_text(normalized, table_content)
                                    or any(y0 <= item_y <= y1 for y0, y1 in table_bboxes)):
                 if table_insert_pos is None:
@@ -222,7 +199,7 @@ class MarkdownConverter:
                 i += 1
                 continue
 
-            # Check for heuristic heading (### level) — short title-like lines not in TOC
+            # Check for sub-heading (### level) — short title-like lines not in TOC
             if self._is_heading(normalized):
                 result.append({'type': 'heading', 'level': 3, 'text': normalized, 'y': item_y})
                 i += 1
@@ -236,7 +213,6 @@ class MarkdownConverter:
                 result.append({'type': 'paragraph', 'text': para_text, 'y': item_y})
             i = j
 
-        # Insert cleaned tables at the position where their text was first filtered.
         # If stop_y is set (shared page), skip tables whose top edge is at or below stop_y.
         for table, (ty0, _ty1) in cleaned_tables_with_bbox:
             if stop_y is not None and ty0 >= stop_y:
@@ -253,12 +229,7 @@ class MarkdownConverter:
         return result, stop_y
 
     def _clean_page_text(self, text: str, header_indices: Set[int], all_line_y: List[float]) -> Tuple[List[str], List[float]]:
-        """Remove headers/footers and clean text. Preserves blank lines as paragraph separators.
 
-        Returns:
-            (cleaned_lines, line_y_positions) — parallel lists; line_y_positions[i]
-            is the page Y coordinate of cleaned_lines[i].
-        """
         lines = text.splitlines()
         cleaned = []
         cleaned_y = []
@@ -283,7 +254,6 @@ class MarkdownConverter:
         return cleaned, cleaned_y
 
     def _get_header_line_indices(self, page) -> Set[int]:
-        """Get line indices that are headers/footers."""
         chars = page.chars
         if not chars:
             return set()
@@ -329,12 +299,6 @@ class MarkdownConverter:
         return header_indices
 
     def _get_first_content_y(self, page) -> float:
-        """Get Y of the first non-header/footer content line on the page.
-
-        Used to split images into 'before' (above this Y, belonging to the
-        previous section) and 'after' (below, belonging to this page's content).
-        Uses the same char-grouping logic as _get_header_line_indices.
-        """
         chars = page.chars
         if not chars:
             return 0.0
@@ -363,14 +327,7 @@ class MarkdownConverter:
         return 0.0
 
     def _get_line_y_positions(self, page, text: str) -> List[float]:
-        """Map each line in text.splitlines() to its Y position on the page.
 
-        extract_text(layout=True) merges characters at very close Y values
-        (e.g. bullet "•" at Y=70 and text at Y=71 become one line).  We
-        mirror that by merging consecutive Y groups within 3 points before
-        doing the sequential match.  Whitespace-only Y groups are skipped
-        entirely so they don't consume a slot.
-        """
         text_lines = text.splitlines()
         chars = page.chars
         if not chars:
@@ -421,16 +378,10 @@ class MarkdownConverter:
         return result
 
     def _normalize_title(self, text: str) -> str:
-        """Normalize a title for comparison."""
         return ' '.join(text.strip(':').strip().lower().split())
 
     def _find_own_section_start(self, lines: List[str]) -> int:
-        """Find the index of the line AFTER our own section title.
-
-        Scans lines for our section title. Returns the index of the
-        first content line after the title. Returns 0 if title is not
-        found (so whole page is processed — title might be implicit).
-        """
+       
         own_normalized = self._normalize_title(self.section_title)
 
         for idx, line in enumerate(lines):
@@ -442,7 +393,7 @@ class MarkdownConverter:
         return 0
 
     def _is_sub_title(self, text: str) -> bool:
-        """Check if text matches a sub-title from the TOC."""
+        #Check if text matches sub-title from TOC
         if not text or not self.sub_titles:
             return False
         text_normalized = self._normalize_title(text)
@@ -452,15 +403,8 @@ class MarkdownConverter:
         return False
 
     def _is_heading(self, text: str) -> bool:
-        """Check if text looks like a heading.
+        #Check if text looks like a heading.
 
-        Headings are typically:
-        - Short (under 60 chars, max 8 words)
-        - Don't contain commas (sentences often do)
-        - Don't start with articles, conjunctions, or prepositions
-        - Don't contain common sentence verbs
-        - Are not the same as section title (already displayed as H1)
-        """
         if not text or len(text) > 60:
             return False
 
@@ -503,11 +447,8 @@ class MarkdownConverter:
         return True
 
     def _is_next_section_title(self, text: str) -> bool:
-        """Check if text matches another section's title (not the current section).
+        #Check if text matches another section's title (not the current section).
 
-        This is used to stop content extraction when we reach the next section
-        on the same page.
-        """
         if not text:
             return False
 
@@ -541,12 +482,7 @@ class MarkdownConverter:
         return False
 
     def _parse_bullet(self, lines: List[str], start: int, base_indent: int) -> Tuple[str, List[Tuple[int, str]], int]:
-        """Parse a bullet point and its sub-bullets with proper continuation handling.
-
-        Returns:
-            (bullet_text, sub_items, next_index) where sub_items is a list of
-            (level, text) tuples. Level 1 = sub-bullet (o marker), level 2 = sub-sub-bullet (\uf0a7 marker).
-        """
+        
         line = lines[start]
         bullet_text = line.strip()[1:].strip()  # Remove bullet character •
         sub_items: List[Tuple[int, str]] = []
@@ -645,14 +581,6 @@ class MarkdownConverter:
           Level 1 – letter sub-item (a., b., …)         indent in [base+4, base+9)
           Level 2 – roman sub-item (i., ii., …)         indent in [base+9, base+14)
           Level 3 – sub-number (1., 2., …)              indent >= base+14
-
-        Continuation lines (no marker) append to the deepest active item at or
-        above their detected level.  A new top-level ``\\d+.`` at base indent
-        stops the parse; sub-numbers at level 3 indent are kept as children.
-
-        When *start_as_sub* is True the first line is already a sub-item (e.g.
-        an orphaned letter sub-item at a page boundary); the loop begins at
-        *start* and ``num_text`` is returned empty.
         """
         if start_as_sub:
             num_text = ''
@@ -753,7 +681,7 @@ class MarkdownConverter:
         return num_text, sub_items, j
 
     def _parse_paragraph(self, lines: List[str], start: int, base_indent: int, table_content: Set[str]) -> Tuple[str, int]:
-        """Parse a paragraph. Stops at blank lines unless next non-blank starts with lowercase (continuation)."""
+        
         para_text = lines[start].strip()
         j = start + 1
 
@@ -801,7 +729,7 @@ class MarkdownConverter:
         return para_text, j
 
     def _get_table_text_content(self, tables) -> Set[str]:
-        """Get text content from tables for filtering."""
+
         content = set()
         for table in tables:
             if table:
@@ -815,7 +743,7 @@ class MarkdownConverter:
         return content
 
     def _is_table_text(self, text: str, table_content: Set[str]) -> bool:
-        """Check if text is from a table. Bidirectional: TC in text OR text in TC."""
+       
         normalized = ' '.join(text.split())
         if normalized in table_content:
             return True
@@ -829,7 +757,7 @@ class MarkdownConverter:
         return False
 
     def _clean_table_cell(self, cell, header_texts: Set[str]) -> str:
-        """Clean a single table cell: remove header/footer text fragments, join multi-line content."""
+    
         if cell is None:
             return ''
 
@@ -855,12 +783,7 @@ class MarkdownConverter:
         return ' '.join(lines)
 
     def _clean_tables(self, tables, bboxes=None) -> List[list]:
-        """Clean tables: remove header fragments, merge continuation rows, trim empty columns.
-
-        Also filters out single-column tables which are usually mis-detections.
-        If *bboxes* is provided (parallel list of (y0, y1) tuples), the returned
-        list contains (cleaned_table, bbox) tuples; otherwise plain table lists.
-        """
+      
         header_texts = {text for _, text in self.header_footer_entries}
         cleaned_tables = []
         use_bbox = bboxes is not None
@@ -890,9 +813,7 @@ class MarkdownConverter:
             # Trim to used columns
             cleaned = [row[:max_used_cols] for row in cleaned]
 
-            # Merge continuation rows.  A row is a continuation only when
-            # both col 0 and col 1 (if present) are empty — a row with a
-            # term in col 1 but empty col 0 is a new entry, not a continuation.
+            # Merge continuation rows
             merged = []
             for row in cleaned:
                 is_continuation = (merged
@@ -920,15 +841,7 @@ class MarkdownConverter:
         return cleaned_tables
 
     def _merge_sparse_columns(self, table: List[List[str]]) -> List[List[str]]:
-        """Merge columns guided by the header row.
-
-        pdfplumber often over-detects column boundaries in simple tables,
-        producing phantom empty columns.  If the header row has fewer
-        non-empty cells than total columns we group columns so each group
-        contains exactly one non-empty header cell, then join cell values
-        within each group.  Exact-duplicate and substring cells within a
-        group are deduplicated before joining.
-        """
+        
         if not table or len(table) < 2:
             return table
 
@@ -942,8 +855,7 @@ class MarkdownConverter:
         if len(header_cols) >= num_cols or len(header_cols) < 2:
             return table
 
-        # Build groups: each group ends at a header_col and includes
-        # all preceding empty-header columns back to the previous group.
+        # Define column groups based on header positions
         groups: List[Tuple[int, int]] = []
         prev = -1
         for hc in header_cols:
@@ -969,7 +881,7 @@ class MarkdownConverter:
         return merged_table
 
     def _table_to_markdown(self, table) -> str:
-        """Convert a pre-cleaned table to markdown format."""
+        # Convert a pre-cleaned table to markdown format
         if not table or len(table) < 2:
             return ""
 
@@ -989,17 +901,8 @@ class MarkdownConverter:
         return "\n".join(md_lines)
 
     def _apply_hyperlinks(self, text: str) -> str:
-        """Apply hyperlink mapping to text.
+        # Apply hyperlink mapping to text.
 
-        Internal links are mapped to the corresponding section markdown file.
-        External links are wrapped in ``[text](url)`` syntax.  PDF annotations
-        often split a single linked phrase into one entry per line (e.g.
-        "City" and "Ordinance" become two annotations with the same URL);
-        consecutive entries sharing a URL are merged before replacement.
-        """
-        # Merge consecutive hyperlinks that share the same URL.  PDF renderers
-        # frequently emit one annotation per visual line even when the link
-        # spans multiple lines.
         merged: List[dict] = []
         for link in self.hyperlinks:
             if merged and merged[-1]['url'] == link.url and not link.is_internal:
@@ -1026,11 +929,11 @@ class MarkdownConverter:
         return text
 
     def _get_relative_image_path(self, image_path: str) -> str:
-        """Get relative path from markdown to image."""
+        # Get relative path from markdown to image
         return f"../assets/images/{Path(image_path).name}"
 
     def _format_to_markdown(self, content_items: List[dict]) -> str:
-        """Format content items to markdown string."""
+        # Format content items to markdown string
         md_lines = []
 
         # Add title

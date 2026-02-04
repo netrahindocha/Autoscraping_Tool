@@ -1,5 +1,3 @@
-"""Document loaders for various formats"""
-
 from .base import DocumentLoader
 from .pdf_loader import PDFLoader
 from .docx_loader import DocxLoader
@@ -7,7 +5,6 @@ from .html_loader import HTMLLoader
 from .txt_loader import TextLoader
 
 def get_loader(file_path: str) -> DocumentLoader:
-    """Get appropriate loader based on file extension"""
     ext = file_path.lower().split('.')[-1]
 
     loaders = {

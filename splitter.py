@@ -1,5 +1,3 @@
-"""PDF splitting functionality using pikepdf"""
-
 import re
 from pathlib import Path
 from typing import List, Tuple
@@ -17,7 +15,6 @@ except ImportError:
 
 
 def sanitize_filename(name: str) -> str:
-    """Convert a title to a safe filename."""
     # Remove or replace invalid characters
     name = re.sub(r'[<>:"/\\|?*]', '', name)
     name = re.sub(r'\s+', '_', name.strip())
@@ -32,7 +29,7 @@ def sanitize_filename(name: str) -> str:
 
 
 class PDFSplitter:
-    """Splits PDF documents into sections."""
+    # Splits PDF documents into sections.
 
     def __init__(self, pdf_path: str, output_dir: str):
         self.pdf_path = Path(pdf_path)
@@ -40,14 +37,8 @@ class PDFSplitter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def split(self, boundaries: List[Tuple[str, int, int]]) -> List[Tuple[str, str]]:
-        """Split PDF based on section boundaries.
+        # Split PDF based on section boundaries.
 
-        Args:
-            boundaries: List of (title, start_page, end_page) tuples (0-indexed)
-
-        Returns:
-            List of (section_title, output_path) tuples
-        """
         if pikepdf:
             return self._split_with_pikepdf(boundaries)
         elif PdfReader and PdfWriter:
@@ -61,7 +52,7 @@ class PDFSplitter:
             )
 
     def _split_with_pikepdf(self, boundaries: List[Tuple[str, int, int]]) -> List[Tuple[str, str]]:
-        """Split using pikepdf (preferred method)."""
+        # Split using pikepdf (preferred method).
         results = []
 
         with pikepdf.open(self.pdf_path) as pdf:
@@ -89,7 +80,7 @@ class PDFSplitter:
         return results
 
     def _split_with_pypdf2(self, boundaries: List[Tuple[str, int, int]]) -> List[Tuple[str, str]]:
-        """Split using PyPDF2 (fallback method)."""
+        # Split using PyPDF2 (fallback method).
         results = []
 
         reader = PdfReader(str(self.pdf_path))

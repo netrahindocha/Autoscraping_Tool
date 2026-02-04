@@ -1,15 +1,3 @@
-"""
-Autoscraper - Main Entry Point
-
-Document processing pipeline:
-1. Load document (PDF, DOCX, HTML, TXT)
-2. Convert to PDF if needed
-3. Detect TOC or H1 headings
-4. Split into section PDFs
-5. Extract images and hyperlinks
-6. Convert each section to Markdown
-"""
-
 import argparse
 import sys
 from pathlib import Path
@@ -23,7 +11,6 @@ from .converter import MarkdownConverter
 
 
 class Autoscraper:
-    """Main document processing pipeline."""
 
     def __init__(
         self,
@@ -48,16 +35,12 @@ class Autoscraper:
         self._log(f"Output: {self.output_dir}")
 
     def _log(self, message: str):
-        """Print log message if verbose mode is on."""
+        # Print log message if verbose mode is on.
         if self.verbose:
             print(message)
 
     def process(self) -> Dict[str, List[str]]:
-        """Process the document through the entire pipeline.
-
-        Returns:
-            Dict with 'pdf' and 'markdown' keys, each containing list of output paths
-        """
+        # Process the document through the entire pipeline.
         results = {'pdf': [], 'markdown': []}
 
         # Step 1: Load and convert to PDF
@@ -145,7 +128,7 @@ class Autoscraper:
 
 
 def main():
-    """CLI entry point."""
+    # CLI entry point.
     parser = argparse.ArgumentParser(
         description="Autoscraper - Convert documents to split PDFs and Markdown"
     )
