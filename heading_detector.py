@@ -45,8 +45,8 @@ class HeadingDetector:
         toc_pages = set()
         min_indent = 999
 
-        # Check first 3 pages for TOC
-        for page_num in range(min(3, len(self._pdf.pages))):
+        # Check first 15 pages for TOC
+        for page_num in range(min(15, len(self._pdf.pages))):
             page = self._pdf.pages[page_num]
             text = page.extract_text(layout=True)
             if not text:
