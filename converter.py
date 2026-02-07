@@ -19,6 +19,7 @@ class MarkdownConverter:
         header_footer_entries: Set[Tuple[int, str]],
         all_sections: Dict[str, str],  # title -> markdown filename mapping
         sub_titles: Optional[Set[str]] = None,
+        next_section_title: Optional[str] = None,
     ):
         self.pdf_path = Path(pdf_path)
         self.section_title = section_title
@@ -28,9 +29,15 @@ class MarkdownConverter:
         self.header_footer_entries = header_footer_entries
         self.all_sections = all_sections  # For internal link mapping
         self.sub_titles = sub_titles or set()
+        self.next_section_title = next_section_title  # Explicit next section for boundary detection
         self._content_started = False  # Tracks if passed over section title
 
-    def convert(self) -> str:
+    def convert(self) -> Tuple[str, bool]:
+        """Convert PDF to markdown.
+
+        Returns:
+            Tuple of (markdown_string, has_meaningful_content)
+        """
         content_items = []
 
         with pdfplumber.open(self.pdf_path) as pdf:
@@ -71,7 +78,19 @@ class MarkdownConverter:
                 else:
                     content_items.extend(page_content)
 
-        return self._format_to_markdown(content_items)
+        has_content = self._has_meaningful_content(content_items)
+        return self._format_to_markdown(content_items), has_content
+
+    def _has_meaningful_content(self, content_items: List[dict]) -> bool:
+        """Check if content has meaningful items beyond just headings.
+
+        Meaningful content includes: paragraphs, bullets, numbered lists, tables, images.
+        Headings alone (which are just the section title fragments) do not count.
+        """
+        for item in content_items:
+            if item['type'] in ('paragraph', 'bullet', 'numbered', 'table', 'image'):
+                return True
+        return False
 
     def _process_page(self, page, page_num: int) -> Tuple[List[dict], float | None]:
         text = page.extract_text(layout=True)
@@ -130,18 +149,25 @@ class MarkdownConverter:
                 stop_y = item_y
                 break
 
+            # Skip section title fragments (multi-line title rendering)
+            # e.g., "CSR 1" and "MODULE" are fragments of "CSR 1 MODULE"
+            if self._is_section_title_fragment(normalized):
+                i += 1
+                continue
+
             # Check for sub-heading from TOC (## heading)
             if self._is_sub_title(normalized):
-                result.append({'type': 'heading', 'level': 2, 'text': normalized, 'y': item_y})
+                heading_text = self._apply_hyperlinks(normalized)
+                result.append({'type': 'heading', 'level': 2, 'text': heading_text, 'y': item_y})
                 i += 1
                 continue
 
             # Check for bullet
             if stripped.startswith('•'):
                 bullet_text, sub_items, j = self._parse_bullet(lines, i, indent)
-                result.append({'type': 'bullet', 'level': 0, 'text': bullet_text, 'y': item_y})
+                result.append({'type': 'bullet', 'level': 0, 'text': self._apply_hyperlinks(bullet_text), 'y': item_y})
                 for level, text in sub_items:
-                    result.append({'type': 'bullet', 'level': level, 'text': text, 'y': item_y})
+                    result.append({'type': 'bullet', 'level': level, 'text': self._apply_hyperlinks(text), 'y': item_y})
                 i = j
                 continue
 
@@ -153,7 +179,7 @@ class MarkdownConverter:
                     'type': 'numbered',
                     'level': 0,
                     'marker': numbered_match.group(1),
-                    'text': num_text,
+                    'text': self._apply_hyperlinks(num_text),
                     'y': item_y
                 })
                 for sub in sub_items:
@@ -161,7 +187,7 @@ class MarkdownConverter:
                         'type': 'numbered',
                         'level': sub['level'],
                         'marker': sub['marker'],
-                        'text': sub['text'],
+                        'text': self._apply_hyperlinks(sub['text']),
                         'y': item_y
                     })
                 i = j
@@ -184,7 +210,7 @@ class MarkdownConverter:
                         'type': 'numbered',
                         'level': sub['level'],
                         'marker': sub['marker'],
-                        'text': sub['text'],
+                        'text': self._apply_hyperlinks(sub['text']),
                         'y': item_y
                     })
                 i = j
@@ -201,7 +227,8 @@ class MarkdownConverter:
 
             # Check for sub-heading (### level) — short title-like lines not in TOC
             if self._is_heading(normalized):
-                result.append({'type': 'heading', 'level': 3, 'text': normalized, 'y': item_y})
+                heading_text = self._apply_hyperlinks(normalized)
+                result.append({'type': 'heading', 'level': 3, 'text': heading_text, 'y': item_y})
                 i += 1
                 continue
 
@@ -402,6 +429,32 @@ class MarkdownConverter:
                 return True
         return False
 
+    def _is_section_title_fragment(self, text: str) -> bool:
+        """Check if text is a fragment of the section title (multi-line rendering)."""
+        if not text:
+            return False
+
+        text_normalized = ' '.join(text.strip().lower().split())
+        title_normalized = ' '.join(self.section_title.strip().lower().split())
+
+        # Exact match
+        if text_normalized == title_normalized:
+            return True
+
+        # Check if text is contained within the section title
+        if text_normalized in title_normalized and len(text_normalized) > 1:
+            return True
+
+        # Check if text matches consecutive words from start or end
+        title_words = title_normalized.split()
+        for i in range(len(title_words)):
+            if text_normalized == ' '.join(title_words[:i+1]):
+                return True
+            if text_normalized == ' '.join(title_words[-(i+1):]):
+                return True
+
+        return False
+
     def _is_heading(self, text: str) -> bool:
         #Check if text looks like a heading.
 
@@ -411,6 +464,25 @@ class MarkdownConverter:
         # Skip if it matches the section title (already shown as H1)
         if text.strip(':').lower() == self.section_title.strip(':').lower():
             return False
+
+        # Skip if text is a fragment of the section title (multi-line title rendering)
+        # e.g., "CSR 1" and "MODULE" are fragments of "CSR 1 MODULE"
+        text_normalized = ' '.join(text.strip().lower().split())
+        title_normalized = ' '.join(self.section_title.strip().lower().split())
+
+        # Check if text is contained within the section title
+        if text_normalized in title_normalized and len(text_normalized) > 1:
+            return False
+
+        # Check if text matches consecutive words from the title
+        title_words = title_normalized.split()
+        for i in range(len(title_words)):
+            # Check prefixes (first N words)
+            if text_normalized == ' '.join(title_words[:i+1]):
+                return False
+            # Check suffixes (last N words)
+            if text_normalized == ' '.join(title_words[-(i+1):]):
+                return False
 
         if not text[0].isupper():
             return False
@@ -447,36 +519,44 @@ class MarkdownConverter:
         return True
 
     def _is_next_section_title(self, text: str) -> bool:
-        #Check if text matches another section's title (not the current section).
+        # Check if text matches the next section's title or is a fragment of it.
 
-        if not text:
+        if not text or not self.next_section_title:
             return False
 
         # Normalize for comparison - remove punctuation, extra spaces, normalize case
         text_normalized = ' '.join(text.strip(':').strip().lower().split())
+        next_normalized = ' '.join(self.next_section_title.strip(':').strip().lower().split())
 
-        for section_title in self.all_sections.keys():
-            # Skip our own section
-            own_normalized = ' '.join(self.section_title.strip(':').strip().lower().split())
-            if section_title.strip(':').strip().lower() == own_normalized:
-                continue
+        # Exact match
+        if text_normalized == next_normalized:
+            return True
 
-            # Check if this text matches another section's title
-            section_normalized = ' '.join(section_title.strip(':').strip().lower().split())
+        # Check without trailing punctuation
+        if text_normalized.rstrip(':.') == next_normalized.rstrip(':.'):
+            return True
 
-            if text_normalized == section_normalized:
+        # Check if text starts with next section title
+        if text_normalized.startswith(next_normalized) and len(text_normalized) < len(next_normalized) + 20:
+            return True
+
+        # Check if next section title is contained in text (for cases where title has extra text)
+        if next_normalized in text_normalized and len(next_normalized) > 10:
+            return True
+
+        # Check if text is a FRAGMENT of the next section title (multi-line rendering)
+        # e.g., "Chapter Two: Need to" is a fragment of "Chapter Two: Need to Know"
+        if text_normalized in next_normalized and len(text_normalized) > 3:
+            return True
+
+        # Check if text matches consecutive words from start or end of next section title
+        next_words = next_normalized.split()
+        for i in range(len(next_words)):
+            # Check prefix (first N words)
+            if text_normalized == ' '.join(next_words[:i+1]):
                 return True
-
-            # Check without trailing punctuation
-            if text_normalized.rstrip(':.') == section_normalized.rstrip(':.'):
-                return True
-
-            # Check if text starts with or contains section title
-            if text_normalized.startswith(section_normalized) and len(text_normalized) < len(section_normalized) + 20:
-                return True
-
-            # Check if section title is contained in text (for cases where title has extra text)
-            if section_normalized in text_normalized and len(section_normalized) > 10:
+            # Check suffix (last N words)
+            if text_normalized == ' '.join(next_words[-(i+1):]):
                 return True
 
         return False
@@ -905,7 +985,20 @@ class MarkdownConverter:
 
         merged: List[dict] = []
         for link in self.hyperlinks:
-            if merged and merged[-1]['url'] == link.url and not link.is_internal:
+            # Check if link text is just the URL itself
+            text_is_url = link.text.startswith(('http://', 'https://')) or link.text == link.url
+
+            # Only merge consecutive links with same URL if the new text isn't a URL
+            # (merging "Kahoot: Guess..." with "https://..." makes no sense)
+            should_merge = (
+                merged and
+                merged[-1]['url'] == link.url and
+                not link.is_internal and
+                not text_is_url and
+                not merged[-1]['text'].startswith(('http://', 'https://'))
+            )
+
+            if should_merge:
                 merged[-1]['text'] += ' ' + link.text
             else:
                 merged.append({

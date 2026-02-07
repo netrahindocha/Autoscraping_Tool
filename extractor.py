@@ -175,13 +175,23 @@ class PDFExtractor:
 
             for link in page.get_links():
                 uri = link.get('uri', '')
+
+                # Skip links with empty URIs
+                if not uri:
+                    continue
+
                 rect = link.get('from', fitz.Rect(0, 0, 0, 0))
 
                 # Get text at link location
                 text = page.get_textbox(rect) if rect else ''
                 text = text.strip() if text else uri
 
-                is_internal = uri.startswith('#') or not uri.startswith(('http://', 'https://', 'mailto:'))
+                # Check if internal link (starts with # or doesn't have a protocol)
+                is_internal = uri.startswith('#') or (
+                    not uri.startswith(('http://', 'https://', 'mailto:')) and
+                    '://' not in uri and
+                    not uri.startswith('www.')
+                )
 
                 links.append(ExtractedHyperlink(
                     url=uri,
@@ -204,18 +214,27 @@ class PDFExtractor:
                 # pdfplumber stores hyperlinks in annots
                 if hasattr(page, 'annots') and page.annots:
                     for annot in page.annots:
-                        if annot.get('uri'):
-                            uri = annot['uri']
-                            is_internal = uri.startswith('#') or not uri.startswith(('http://', 'https://', 'mailto:'))
+                        uri = annot.get('uri', '')
 
-                            links.append(ExtractedHyperlink(
-                                url=uri,
-                                text=uri,  # pdfplumber doesn't easily give link text
-                                page_num=page_num,
-                                is_internal=is_internal,
-                                x=annot.get('x0', 0),
-                                y=annot.get('top', 0)
-                            ))
+                        # Skip links with empty URIs
+                        if not uri:
+                            continue
+
+                        # Check if internal link
+                        is_internal = uri.startswith('#') or (
+                            not uri.startswith(('http://', 'https://', 'mailto:')) and
+                            '://' not in uri and
+                            not uri.startswith('www.')
+                        )
+
+                        links.append(ExtractedHyperlink(
+                            url=uri,
+                            text=uri,  # pdfplumber doesn't easily give link text
+                            page_num=page_num,
+                            is_internal=is_internal,
+                            x=annot.get('x0', 0),
+                            y=annot.get('top', 0)
+                        ))
 
         return links
 

@@ -207,10 +207,14 @@ class HeadingDetector:
 
             if i + 1 < len(entries):
                 next_page = entries[i + 1].page_num
-                # Include the next section's start page — it may be shared
-                # (next section starts mid-page).  The markdown converter
-                # will stop at the next section's title regardless.
-                end_page = next_page if next_page is not None else total_pages - 1
+                if next_page is not None:
+                    # Detect if current section shares its last page with the next section
+                    if next_page == start_page or self._is_shared_page(next_page, entries[i + 1].title):
+                        end_page = next_page  # Shared page — include in both PDFs
+                    else:
+                        end_page = next_page - 1  # Not shared — exclude next section's page
+                else:
+                    end_page = total_pages - 1
             else:
                 end_page = total_pages - 1
 
@@ -231,8 +235,14 @@ class HeadingDetector:
             start_page = heading.page_num
 
             if i + 1 < len(headings):
-                # Include the next section's start page (may be shared mid-page)
-                end_page = headings[i + 1].page_num
+                next_page = headings[i + 1].page_num
+                if next_page is not None:
+                    if next_page == start_page or self._is_shared_page(next_page, headings[i + 1].title):
+                        end_page = next_page
+                    else:
+                        end_page = next_page - 1
+                else:
+                    end_page = total_pages - 1
             else:
                 end_page = total_pages - 1
 
@@ -240,6 +250,84 @@ class HeadingDetector:
             boundaries.append((heading.title, start_page, end_page))
 
         return boundaries
+
+    def _is_shared_page(self, page_num: int, next_title: str) -> bool:
+        """Check if a page has content from the current section before the next section's title.
+
+        Returns True if meaningful content exists above the next section's title,
+        indicating the page is shared between two sections.
+        """
+        if page_num < 0 or page_num >= len(self._pdf.pages):
+            return False
+
+        page = self._pdf.pages[page_num]
+        text = page.extract_text() or ""
+        lines = text.strip().split('\n')
+
+        if not lines:
+            return False
+
+        next_normalized = ' '.join(next_title.strip(':').strip().lower().split())
+        next_words = next_normalized.split()
+
+        # Find the line containing the next section's title
+        title_line_idx = None
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            line_normalized = ' '.join(line_stripped.strip(':').strip().lower().split())
+
+            # Exact match
+            if line_normalized == next_normalized:
+                title_line_idx = i
+                break
+
+            # Line is a significant fragment/substring of the title (multi-line rendering)
+            if line_normalized and line_normalized in next_normalized and len(line_normalized) > 5:
+                title_line_idx = i
+                break
+
+            # Check if line matches first N words of title (multi-line title split)
+            if next_words:
+                for w in range(len(next_words), 0, -1):
+                    prefix = ' '.join(next_words[:w])
+                    if line_normalized == prefix and len(prefix) > 3:
+                        title_line_idx = i
+                        break
+                if title_line_idx is not None:
+                    break
+
+        if title_line_idx is None or title_line_idx == 0:
+            return False  # Title not found or at very top → not shared
+
+        # Check for meaningful content before the title
+        # (excluding headers, footers, page numbers, and short noise)
+        header_footer_texts = {
+            ' '.join(text.strip().lower().split())
+            for _, text in self._header_footer_entries
+        }
+
+        for j in range(title_line_idx):
+            line = lines[j].strip()
+            if not line or len(line) <= 3:
+                continue
+            # Skip standalone digits (page numbers)
+            if line.isdigit():
+                continue
+            # Skip common page number patterns
+            if re.match(r'^(page\s+)?\d+$', line, re.IGNORECASE):
+                continue
+            if re.match(r'^-\s*\d+\s*-$', line):
+                continue
+            # Skip known headers/footers
+            line_lower = ' '.join(line.lower().split())
+            if line_lower in header_footer_texts:
+                continue
+            # Found meaningful content above the title → shared page
+            return True
+
+        return False
 
     @property
     def toc_pages(self) -> Set[int]:

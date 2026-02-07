@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 from .loaders import get_loader
 from .heading_detector import HeadingDetector
 from .splitter import PDFSplitter, sanitize_filename
-from .extractor import PDFExtractor
+from .extractor import PDFExtractor, ExtractedHyperlink
 from .converter import MarkdownConverter
 
 
@@ -63,6 +63,13 @@ class Autoscraper:
             if header_footer_entries:
                 self._log(f"Auto-detected {len(header_footer_entries)} header/footer patterns")
 
+        # Step 2.5: Extract hyperlinks from original PDF (before splitting)
+        # Hyperlink annotations are often lost when PDFs are split
+        self._log("\n=== Step 2.5: Extracting hyperlinks from original PDF ===")
+        original_extractor = PDFExtractor(pdf_path, "00", str(self.assets_dir))
+        all_hyperlinks = original_extractor.extract_hyperlinks()
+        self._log(f"Found {len(all_hyperlinks)} hyperlinks in original PDF")
+
         # Step 3: Split PDF into sections
         self._log("\n=== Step 3: Splitting PDF ===")
         splitter = PDFSplitter(pdf_path, str(self.pdf_dir))
@@ -85,16 +92,34 @@ class Autoscraper:
 
         for idx, (title, split_pdf_path) in enumerate(split_results):
             section_id = str(idx + 1).zfill(2)
+            start_page, end_page = boundaries[idx][1], boundaries[idx][2]
             self._log(f"\nProcessing section {section_id}: {title}")
 
-            # Extract images and hyperlinks
+            # Extract images from split PDF
             extractor = PDFExtractor(split_pdf_path, section_id, str(self.assets_dir))
-
             images = extractor.extract_images()
             self._log(f"  Extracted {len(images)} images")
 
-            hyperlinks = extractor.extract_hyperlinks()
-            self._log(f"  Extracted {len(hyperlinks)} hyperlinks")
+            # Filter hyperlinks from original PDF for this section's page range
+            # and adjust page numbers to be relative to the split PDF
+            section_hyperlinks = [
+                ExtractedHyperlink(
+                    url=link.url,
+                    text=link.text,
+                    page_num=link.page_num - start_page,
+                    is_internal=link.is_internal,
+                    x=link.x,
+                    y=link.y
+                )
+                for link in all_hyperlinks
+                if start_page <= link.page_num <= end_page
+            ]
+            self._log(f"  Mapped {len(section_hyperlinks)} hyperlinks")
+
+            # Get next section title for boundary detection
+            next_section_title = None
+            if idx + 1 < len(split_results):
+                next_section_title = split_results[idx + 1][0]
 
             # Convert to Markdown
             converter = MarkdownConverter(
@@ -102,16 +127,27 @@ class Autoscraper:
                 section_title=title,
                 section_id=section_id,
                 images=images,
-                hyperlinks=hyperlinks,
+                hyperlinks=section_hyperlinks,
                 header_footer_entries=header_footer_entries,
                 all_sections=section_mapping,
-                sub_titles=sub_titles
+                sub_titles=sub_titles,
+                next_section_title=next_section_title
             )
 
-            markdown_content = converter.convert()
+            markdown_content, has_meaningful_content = converter.convert()
+
+            # Skip sections with no meaningful content (only heading, no text/images/hyperlinks)
+            if not has_meaningful_content and not images and not section_hyperlinks:
+                self._log(f"  Skipping empty section (no content)")
+                # Remove the split PDF since section is empty
+                Path(split_pdf_path).unlink(missing_ok=True)
+                results['pdf'].remove(split_pdf_path)
+                continue
 
             # Save Markdown file
-            md_filename = section_mapping[title]
+            # Generate filename directly using index (not from mapping which may have duplicates)
+            safe_name = sanitize_filename(title)
+            md_filename = f"Section_{section_id}_{safe_name}.md"
             md_path = self.markdown_dir / md_filename
 
             md_path.write_text(markdown_content, encoding='utf-8')
